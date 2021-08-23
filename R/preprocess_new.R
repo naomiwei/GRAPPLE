@@ -108,12 +108,10 @@ harmonise_data_list <- function(dat) {
 
         ## Extract the columns corresponding to the new dataset
         data2 <- data2[data2$mr_keep, ]
-        print(data2)
         
         data2$SNP <- as.character(data2$SNP)
         
         data2 <- data2[, c(1, grep(".outcome", colnames(data2))), drop = FALSE]
-        print(data2)
         colnames(data2) <- gsub(".outcome", "", colnames(data2))
         
         # change types back to character after harmonising
@@ -208,7 +206,6 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
     if (is.null(sel.SNPs)){
         temp <- selectSNPs(files, max.p.thres,  clump_r2, p.thres.cor, cal.cor, plink_exe,
         plink_refdat)
-        print(temp)
         sel.SNPs <- temp[[1]]
         cor.SNPs <- temp[[2]]
         marker.SNPs <- temp[[3]]
@@ -218,6 +215,7 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
     # get list of SNPs for data, cor and markers and then harmonise them all together
     
     dat <- extract_data(files, union(sel.SNPs, cor.SNPs))
+    print()
     dat <- harmonise_data_list(dat)  # list of harmonised data sets
     
     
@@ -264,7 +262,7 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
 
     #
     data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% sel.SNPs]
-    # marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
+    marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
     
     return(list(data = data, marker.data = marker.data, cor.mat = corr))
 
