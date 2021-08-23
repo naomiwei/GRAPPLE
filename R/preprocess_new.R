@@ -187,7 +187,7 @@ selectMarkerSNPs <- function(snp_intersection, max.marker.p.thres = 1, clump_r2_
 #' get data file with meta_data, beta_exp, se_exp, beta_out, se_out, selection_pvals)
 #' 
 getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL, 
-                    cor.SNPs = NULL, p.thres.cor = 0.9, cal.cor = TRUE,
+                    cor.SNPs = NULL, p.thres.cor = (1-1e-3), cal.cor = TRUE,
                     get.marker.candidates, marker.p.source = "exposure",
                     marker.p.thres = 1e-5,
                     clump_r2_formarkers = 0.05
@@ -211,6 +211,8 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
         print(temp)
         sel.SNPs <- temp[[1]]
         cor.SNPs <- temp[[2]]
+        marker.SNPs <- temp[[3]]
+        print('Selected SNPs for data, marker data and correlation, extracting data...')
     }
     
     # get list of SNPs for data, cor and markers and then harmonise them all together
@@ -243,15 +245,15 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
     
     
     #calculate correlation matrix
-    
+
     if (cal.cor) {
         z.values <- cbind(cor_data$beta_exp[SNP %in% cor.SNPs]/cor_data$se_exp[SNP %in% cor.SNPs],
                           cor_data$beta_out[SNP %in% cor.SNPs]/cor_data$se_out[SNP %in% cor.SNPs])
-        
-        
+
+
         colnames(z.values) <- c(paste0("exposure", 1:length(exp.files)),
                                 paste0("outcome", 1:length(out.files)))
-        
+
         z.values <- as.matrix(z.values)
         z.values <- z.values[rowSums(is.na(z.values)) == 0,  , drop = F]
         covv <- t(z.values) %*% z.values / nrow(z.values)
@@ -259,10 +261,10 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
         corr <- t(covv / sqrt(varr))/sqrt(varr)
     } else
         corr <- NULL
-    
-    
+
+    #
     data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% sel.SNPs]
-    marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
+    # marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
     
     return(list(data = data, marker.data = marker.data, cor.mat = corr))
 
