@@ -1,8 +1,17 @@
+loadRData <- function(fileName){
+    #loads an RData file, and returns it
+    load(fileName)
+    get(ls()[ls() != "fileName"])
+}
+
+
 #' Read GWAS summary statistics data
 #'
 #' @importFrom tools file_ext
 #' @importFrom data.table fread
 #'
+#'
+
 read_gwas_summary <- function(file, message = TRUE) {
 
     if (message) {
@@ -10,7 +19,7 @@ read_gwas_summary <- function(file, message = TRUE) {
     }
 
     if (file_ext(file) %in% c("rda", ".rData")) {
-        load(file)
+        dat <- loadRData(file)
     } else {
         dat <- fread(file)
     }
@@ -29,7 +38,8 @@ read_gwas_summary <- function(file, message = TRUE) {
 #' 
 #' 
 get_snp_intersection <- function(files, message = TRUE) {
-
+    
+    print("Finding intersection of SNPs from all datasets...")
     sel_dat <- read_gwas_summary(files[1], message)
     snp_intersection <- unique(sel_dat$SNP)
 
@@ -76,10 +86,13 @@ extract_data <- function(files, SNP_list = NULL, message = TRUE) {
 #' Input: dat, a list of dataframes
 #' Output: dat_new, a list of (harmonised) dataframes
 #' 
+#' mode = 1 for TwoSampleMR hormonise_data
+#' mode = 2 for GRAPPLE harmonise_data
+#' 
 #' @importFrom TwoSampleMR harmonise_data
 #'
-harmonise_data_list <- function(dat) {
-    
+harmonise_data_list <- function(dat, fast = T) {
+    print("Harmonising a list of data...")
     
     dat_new <- list()
     dat[[1]] <- dat[[1]][order(SNP)]
@@ -101,8 +114,11 @@ harmonise_data_list <- function(dat) {
         if (!("outcome" %in% colnames(data2))) {
             data2[, "outcome"] <- rep("outcome", nrow(data2)) }
         
-        
-        data2 <- suppressMessages(harmonise_data(data1, data2))
+        if (fast == T) {
+            data2 <- suppressMessages(harmonise_data1(data1, data2))
+        } else {
+            data2 <- suppressMessages(harmonise_data(data1, data2))
+        }
         
         
 
@@ -135,7 +151,9 @@ harmonise_data_list <- function(dat) {
     stopifnot(check_same(lapply(dat_new, function(x) x$SNP)))
     stopifnot(check_same(lapply(dat_new, function(x) x$effect_allele)))
     stopifnot(check_same(lapply(dat_new, function(x) x$reference_allele)))
-
+    
+    
+    print('Done harmonising.')
     dat_new
 }
 
@@ -145,10 +163,13 @@ harmonise_data_list <- function(dat) {
 
 # select SNPs for main data and correlation
 
-selectSNPs <- function(files, max.p.thres = 1, clump_r2 = 0.001, p.thres.cor = 0.05, cal.cor = TRUE, plink_exe = './plink',
-                       plink_refdat, get.marker.candidates = TRUE, max.marker.p.thres = 1, clump_r2_formarkers = 0.001){
-    
+selectSNPs <- function(files, max.p.thres = 1, clump_r2 = 0.001, cal.cor = T, 
+                       p.thres.cor = 0.5, plink_exe = './plink',
+                       plink_refdat){
+    print("Selecting SNPs for inference and correlation estimation...")
     tmp <- get_snp_intersection(files)
+    
+    snp_inter <<- tmp
     
     # if calculating correlation, use non-significant SNPs (pval > 0.5) without LD clumping
     if (cal.cor) {
@@ -162,12 +183,9 @@ selectSNPs <- function(files, max.p.thres = 1, clump_r2 = 0.001, p.thres.cor = 0
     tmp2 <- plink_clump(tmp, plink_exe, refdat = plink_refdat, clump_r2 = clump_r2,
                         clump_p1 = max.p.thres)
     sel.SNPs <- as.character(tmp2$SNP) # selected SNPs
+
     
-    if (get.marker.candidates == TRUE) {
-        mar.SNPs <- selectMarkerSNPs(tmp, max.marker.p.thres, clump_r2_formarkers, plink_exe = plink_exe, refdat = plink_refdat)
-    }
-    
-    list(sel.SNPs, cor.SNPs, mar.SNPs)
+    list(sel.SNPs, cor.SNPs)
 }
 
 
@@ -182,43 +200,57 @@ selectMarkerSNPs <- function(snp_intersection, max.marker.p.thres = 1, clump_r2_
 }
 
 
-#' get data file with meta_data, beta_exp, se_exp, beta_out, se_out, selection_pvals)
-#' 
-getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL, 
-                    cor.SNPs = NULL, p.thres.cor = (1-1e-3), cal.cor = TRUE,
-                    get.marker.candidates, marker.p.source = "exposure",
-                    marker.p.thres = 1e-5,
-                    clump_r2_formarkers = 0.05
-                    plink_exe = "./plink",
-                    plink_refdat = "./util/data_maf0.01_rs_ref",
-                    max.p.thres = 0.01, clump_r2 = 0.001) {
-   
+getInput <- function(sel.files, exp.files, out.files, sel.SNPs = NULL, 
+                                cor.SNPs = NULL, p.thres.cor = (1-1e-3), cal.cor = TRUE,
+                                get.marker.candidates, marker.p.source = "exposure",
+                                marker.p.thres = 1e-5,
+                                clump_r2_formarkers = 0.05,
+                                plink_exe = "./plink",
+                                plink_refdat = "./util/data_maf0.01_rs_ref",
+                                max.p.thres = 0.01, clump_r2 = 0.001) {
 
     num_sel <- length(sel.files)
     num_exp <- length(exp.files)
     num_out <- length(out.files)
-    num_files <- num_sel + num_exp + num_out
     
-    files = c(sel.files, exp.files, out.files) # list of all files to be processed
+    files = c(sel.files, exp.files, out.files) # list of all files to be processed   
     
-    
-     # get intersection of SNPs, do LD clumping and harmonise, get cor SNPs
     if (is.null(sel.SNPs)){
-        temp <- selectSNPs(files, max.p.thres,  clump_r2, p.thres.cor, cal.cor, plink_exe,
-        plink_refdat)
+        temp <- selectSNPs(files, max.p.thres, clump_r2, p.thres.cor, cal.cor, plink_exe,
+                           plink_refdat)
         sel.SNPs <- temp[[1]]
         cor.SNPs <- temp[[2]]
-        marker.SNPs <- temp[[3]]
-        print('Selected SNPs for data, marker data and correlation, extracting data...')
+        
+        selectedSNPs <<- sel.SNPs
+        selectedcorSNPs <<- cor.SNPs
+        print('Selected SNPs for inference data and estimating correlation, extracting data...')
     }
     
-    # get list of SNPs for data, cor and markers and then harmonise them all together
     
-    dat <- extract_data(files, union(sel.SNPs, cor.SNPs))
-    print()
-    dat <- harmonise_data_list(dat)  # list of harmonised data sets
+    # get list of SNPs for data and harmonise
     
+    dat <- extract_data(files, sel.SNPs)
+    dat <- harmonise_data_list(dat, fast = F)  # list of harmonised data sets
     
+    data <- getData(dat, num_sel, num_exp, num_out)
+    print('Inference data completed')
+    head(data)
+    
+    if (cal.cor) {
+        cor_dat <- extract_data(files, cor.SNPs)
+        cor_dat <- harmonise_data_list(dat, fast = T)
+        
+        cor_dat <- getCorDat(dat, num_sel, num_exp, num_out)
+        corr <- calcCorr(cor_dat)
+    }
+    
+} 
+
+#' get data file with meta_data, beta_exp, se_exp, beta_out, se_out, selection_pvals)
+#' dat is a list of sel, exp, out dataframes, harmonised.
+#' 
+getData <- function(dat, num_sel, num_exp, num_out) {
+    num_files <- num_sel + num_exp + num_out
 
     meta_data <- dat[[1]][, c("SNP", "effect_allele",
                                                "other_allele")]
@@ -239,40 +271,74 @@ getData <- function(sel.files, exp.files, out.files, sel.SNPs = NULL,
     pval <- apply(pval*num_sel, 2, min)
     pval <- pmin(pval, 1)
 
-    cor_data <- cbind(meta_data$SNP, beta_exp, se_exp, beta_out, se_out)[SNP %in% cor.SNPs]
-    
-    
-    #calculate correlation matrix
-
-    if (cal.cor) {
-        z.values <- cbind(cor_data$beta_exp[SNP %in% cor.SNPs]/cor_data$se_exp[SNP %in% cor.SNPs],
-                          cor_data$beta_out[SNP %in% cor.SNPs]/cor_data$se_out[SNP %in% cor.SNPs])
-
-
-        colnames(z.values) <- c(paste0("exposure", 1:length(exp.files)),
-                                paste0("outcome", 1:length(out.files)))
-
-        z.values <- as.matrix(z.values)
-        z.values <- z.values[rowSums(is.na(z.values)) == 0,  , drop = F]
-        covv <- t(z.values) %*% z.values / nrow(z.values)
-        varr <- colMeans(z.values^2, na.rm = T)
-        corr <- t(covv / sqrt(varr))/sqrt(varr)
-    } else
-        corr <- NULL
+    # cor_data <- cbind(meta_data$SNP, beta_exp, se_exp, beta_out, se_out)[SNP %in% cor.SNPs]
+    # 
+    # 
+    # #calculate correlation matrix
+    # 
+    # if (cal.cor) {
+    #     z.values <- cbind(cor_data$beta_exp[SNP %in% cor.SNPs]/cor_data$se_exp[SNP %in% cor.SNPs],
+    #                       cor_data$beta_out[SNP %in% cor.SNPs]/cor_data$se_out[SNP %in% cor.SNPs])
+    # 
+    # 
+    #     colnames(z.values) <- c(paste0("exposure", 1:length(exp.files)),
+    #                             paste0("outcome", 1:length(out.files)))
+    # 
+    #     z.values <- as.matrix(z.values)
+    #     z.values <- z.values[rowSums(is.na(z.values)) == 0,  , drop = F]
+    #     covv <- t(z.values) %*% z.values / nrow(z.values)
+    #     varr <- colMeans(z.values^2, na.rm = T)
+    #     corr <- t(covv / sqrt(varr))/sqrt(varr)
+    # } else
+    #     corr <- NULL
 
     #
-    data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% sel.SNPs]
-    marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
+    data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)
+    # marker.data <- cbind(meta_data, beta_exp, se_exp, beta_out, se_out, pval)[SNP %in% marker.SNPs]
     
-    return(list(data = data, marker.data = marker.data, cor.mat = corr))
+    
+    data.list <- list(meta_data = meta_data, beta_exp = beta_exp,
+                      se_exp = se_exp, 
+                   beta_out = beta_out, se_out = se_out, selection_pvals = pval)
+    
+}
 
+getCorDat <- function(dat, num_sel, num_exp, num_out) {
+    num_files <- num_sel + num_exp + num_out
+    
+    snp <- dat[[1]][,"SNP"]
+    beta_exp <- lapply(dat[(num_sel+1):(num_sel+num_exp)], function(x) x$beta)
+    beta_exp <- do.call("rbind", beta_exp)
+    
+    se_exp <- lapply(dat[(num_sel+1):(num_sel+num_exp)], function(x) x$se)
+    se_exp <- do.call("rbind", se_exp)
     
     
-    # data.list <- list(meta_data = meta_data, beta_exp = beta_exp , se_exp = se_exp,
-    #              beta_out = beta_out, se_out = se_out, selection_pvals = pval)
+    beta_out <- lapply(dat[(num_sel+num_exp+1):num_files], function(x) x$beta)
+    beta_out <- do.call("rbind", beta_out)
     
+    se_out <- lapply(dat[(num_sel+num_exp+1):num_files], function(x) x$se)
+    se_out <- do.call("rbind", se_out)
     
-    
-    
-    
+    cor_dat <- cbind(snp, beta_exp, se_exp, beta_out, se_out)
+    cor_dat
+}
+
+
+#  expecting cor_dat to be a dataframe with columns:
+# SNP, beta_exp, se_exp, beta_out, se_out
+calcCorr <- function(cor_dat){
+    z.values <- cbind(cor_data$beta_exp[SNP %in% cor.SNPs]/cor_data$se_exp[SNP %in% cor.SNPs],
+                      cor_data$beta_out[SNP %in% cor.SNPs]/cor_data$se_out[SNP %in% cor.SNPs])
+
+
+    colnames(z.values) <- c(paste0("exposure", 1:length(exp.files)),
+                            paste0("outcome", 1:length(out.files)))
+
+    z.values <- as.matrix(z.values)
+    z.values <- z.values[rowSums(is.na(z.values)) == 0,  , drop = F]
+    covv <- t(z.values) %*% z.values / nrow(z.values)
+    varr <- colMeans(z.values^2, na.rm = T)
+    corr <- t(covv / sqrt(varr))/sqrt(varr)
+    corr
 }

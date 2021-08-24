@@ -51,16 +51,18 @@ plink_clump <- function(dat,
     return(a)
 }
 
-
+#
 #' @keywords internal
 #'
 formatData <- function(dat, cls = c("exposure", "outcome")) {
     cls <- match.arg(cls, c("exposure", "outcome"))
+    
+    # add missing columns if needed
     for (nm in c("eaf", "id")) {
         if (!(nm %in% colnames(dat)))
             dat[, nm] <- rep("NR", nrow(dat))
     }
-    idx <- which(colnames(dat) == "SNP")
-    colnames(dat)[-idx] <- paste(colnames(dat)[-idx], ".", cls, sep = "")
+    idx <- which(colnames(dat) == "SNP") # index of SNP column
+    colnames(dat)[-idx] <- paste(colnames(dat)[-idx], ".", cls, sep = "") # concat ".exposure" or ".outcome" onto end of all column names except "SNP"
     return(dat)
 }
