@@ -22,6 +22,14 @@ library(data.table)
 ## data <- data[SNP %in% snps_kept]
 ## fwrite(data, "../data/T2D-diagram12-Im-subset.csv")
 
+shell <- ifelse(Sys.info()['sysname'] == "Windows", "cmd", "sh")
+if (shell == "Windows") {
+    plink_exe <- "./plink"
+} else {
+    plink_exe <-"../../util/plink_mac/plink"
+}
+
+
 sel.files <- "../../data/BMI-giant17eu-subset.csv"
 exp.files <- "../../data/CAD-c4d11-subset.csv"
 out.files <- "../../data/T2D-diagram12-Im-subset.csv"
@@ -33,7 +41,7 @@ test_that("Get intersection of SNPs", {
     expect_equal(nrow(tmp), 2644)
 })
 
-suppressMessages(tmp2 <- plink_clump(tmp, "../../util/plink_mac/plink", refdat = "../../util/data_maf0.01_rs"))
+suppressMessages(tmp2 <- plink_clump(tmp, plink_exe, refdat = "../../util/data_maf0.01_rs"))
 
 test_that("LD clumping using PLINK", {
     expect_equal(nrow(tmp2), 530)

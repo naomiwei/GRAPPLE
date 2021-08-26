@@ -32,7 +32,7 @@ read_gwas_summary <- function(file, message = TRUE) {
 #'
 #' @details The first file is the selection dataset.
 #'
-get_snp_intersection <- function(files, message = TRUE) {
+get_snp_intersection <- function(files, message = TRUE, pval_thres = NULL) {
 
     message("Finding intersection of SNPs from all datasets...")
     sel_dat <- read_gwas_summary(files[1], message)
@@ -42,6 +42,11 @@ get_snp_intersection <- function(files, message = TRUE) {
         for (file in files[-1]) {
 
             dat_new <- read_gwas_summary(file, message)
+            
+            if (!is.null(pval_thres)) {
+                dat_new$SNP <- dat_new$SNP[dat_new$pval < pval_thres] # only take snps with pval below threshold if given (used for marker selection)
+            }
+            
             snp_intersection <- intersect(snp_intersection, dat_new$SNP)
         }
     }
@@ -138,48 +143,43 @@ harmonise_data_list <- function(dat, fast = T) {
 
 ## Left to be done:
 ## Generate Jingshu's list of (data, marker_data, cor_mat) using the functions above_
+
 # select SNPs for main data and correlation
 
-selectSNPs <- function(files, max_p_thres = 1, clump_r2 = 0.001, cal_cor = T,
+selectSNPs <- function(files = NULL, snp_inter = NULL, max_p_thres = 1, clump_r2 = 0.001, cal_cor = T,
                        p_thres_cor = 0.5, plink_exe = './plink',
                        plink_refdat){
     message("Selecting SNPs for inference and correlation estimation...")
-    tmp <- get_snp_intersection(files)
+    
+    if (is.null(snp_inter)) {
+        snp_inter <- get_snp_intersection(files)
+    }
 
-    snp_inter <<- tmp
 
     # if calculating correlation, use non-significant SNPs (pval > 0.5) without LD clumping
     if (cal_cor) {
-        cor_SNPs <- as.character(tmp$SNP[tmp$pval > p_thres_cor]) # (no bonferroni correction here)
+        cor_SNPs <- as.character(snp_inter$SNP[snp_inter$pval > p_thres_cor]) # (no bonferroni correction here)
     } else {
         cor_SNPs <- NULL
     }
 
 
     message("Start clumping using PLINK ...")
-    tmp2 <- plink_clump(tmp, plink_exe, refdat = plink_refdat, clump_r2 = clump_r2,
+    tmp2 <- plink_clump(snp_inter, plink_exe, refdat = plink_refdat, clump_r2 = clump_r2,
                         clump_p1 = max_p_thres)
+    
     sel_SNPs <- as.character(tmp2$SNP) # selected SNPs
+    sel_SNPs_pvals <- tmp2$pval # keep pvals for marker SNPs pval threshold
 
 
-    list(sel_SNPs, cor_SNPs)
-}
-
-
-selectMarkerSNPs <- function(snp_intersection, max_marker_p_thres = 1, clump_r2_formarkers = 0.001, plink_exe = './plink',
-                             plink_refdat){
-    message("Start clumping using PLINK (markers)")
-    mar_SNPs <- plink_clump(snp_intersection, plink_exe, refdat = plink_refdat,
-                            clump_r2 = clump_r2_formarkers, clump_p1 = max_marker_p_thres)
-
-    mar_SNPs <- as.character(mar_SNPs$SNP)
-    mar.SNPs
+    list(sel_SNPs, cor_SNPs, snp_inter, sel_SNPs_pvals)
 }
 
 
 getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
                      cor_SNPs = NULL, p_thres_cor = (1-1e-3), cal_cor = TRUE,
-                     get_marker_candidates, marker_p_source = "exposure",
+                     mar_SNPs = NULL,
+                     get_marker_candidates = T, marker_p_source = "exposure",
                      marker_p_thres = 1e-5,
                      clump_r2_formarkers = 0.05,
                      plink_exe = "./plink",
@@ -192,9 +192,21 @@ getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
 
     files = c(sel_files, exp_files, out_files) # list of all files to be processed
 
+    if (num_exp > 1) {
+        if (get.marker.candidates)
+            message("Marker candidates will not be obtained as number of risk factors k > 1")
+        get.marker.candidates <- F
+    }
+    
+    
     if (is.null(sel_SNPs)){
         temp <- selectSNPs(files, max_p_thres, clump_r2, p_thres_cor, cal_cor, plink_exe,
                            plink_refdat)
+        
+        if (get_marker_candidates & (marker_p_source == "selection")) {
+            snp_inter <- temp[[3]] # used later for getting markers
+        }
+        
         sel_SNPs <- temp[[1]]
         cor_SNPs <- temp[[2]]
 
@@ -213,15 +225,51 @@ getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
     dat$num_out <- num_out
 
     data <- get_data(dat)
-    message('Inference data completed')
+    message('Inference data completed.')
     head(data)
 
     if (cal_cor) {
         cor_dat <- extract_data(files, cor_SNPs)
         cor_dat <- harmonise_data_list(dat, fast = T)
 
-        cor_dat <- get_data(dat, num_sel, num_exp, num_out)
-        corr <- calcCorr(cor_dat)
+        cor_dat <- get_data(dat)
+        corr <- calc_corr(cor_dat)
+        message('Correlation matrix computed.')
+        head(corr)
+    }
+    
+    if (get_marker_candidates & is.null(mar_SNPs)) {
+        if (marker_p_source == "selection") {
+            message('Extracting marker data, source = selection...')
+            tmp <- selectSNPs(files = NULL, snp_inter = snp_inter, max_p_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
+            p_thres_cor = 0.5, plink_exe = './plink', plink_refdat)
+            
+            mar_dat <- extract_data(files, mar_SNPs)
+            mar_dat <- harmonise_data_list(dat, fast = T)
+            
+            marker_data <- get_data(mar_dat)
+            marker_data$SNP <- marker_data$SNP[pval < marker_p_thres]
+            
+            message('Extracted marker data.')
+            head(mar_dat)
+        } else {
+            # If marker_p_source is exposure, only take intersection of exposure files and harmonise them
+            message('Extracting Marker data, source = exposure...')
+            exp_files <- files[1:num_exp]
+            mar_snp_inter <- get_snp_intersection(exp_files, pval_thres = marker_p_thres/num_sel) # bonferroni correction
+            
+            mar_SNPs <- selectSNPs(files = NULL, snp_inter = mar_snp_inter, max_p_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
+                              p_thres_cor = 0.5, plink_exe = './plink', plink_refdat)[[1]]
+            
+            mar_dat <- extract_data(exp_files, mar_SNPs)
+            mar_dat <- harmonise_data_list(exp_files, fast = T)
+            
+            
+            marker_data <- get_data(mar_dat)
+            message('Marker data extracted')
+        }
+        
+        
     }
 
 }
@@ -267,7 +315,7 @@ get_data <- function(dat_list) {
 
 #  expecting cor_dat to be a dataframe with columns:
 # SNP, beta_exp, se_exp, beta_out, se_out
-calcCorr <- function(cor_data, cor_SNPs){
+calc_corr <- function(cor_data, cor_SNPs){
     z_values <- cbind(cor_data$beta_exp[SNP %in% cor_SNPs]/cor_data$se_exp[SNP %in% cor_SNPs],
                       cor_data$beta_out[SNP %in% cor_SNPs]/cor_data$se_out[SNP %in% cor_SNPs])
 

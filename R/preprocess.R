@@ -46,7 +46,7 @@ getInput1 <- function(sel.files,
 					 plink_exe = NULL) {
     if (length(exp.files) > 1) {
         if (get.marker.candidates)
-            print("Marker candidates will not be obtained as number of risk factors k > 1")
+            message("Marker candidates will not be obtained as number of risk factors k > 1")
         get.marker.candidates <- F
     }
 
@@ -62,7 +62,7 @@ getInput1 <- function(sel.files,
     sel.SNPs.cor <- c()
     k <- length(exp.files)
     for (file in sel.files) {
-        print(paste("loading data for selection:", file, "..."))
+        message(paste("loading data for selection:", file, "..."))
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
             load(file)
@@ -116,7 +116,7 @@ getInput1 <- function(sel.files,
     marker.SNPs <- NULL
     marker.pvals <- NULL
     for (exp.file in exp.files) {
-        print(paste("loading data from exposure:", exp.file, "..."))
+        message(paste("loading data from exposure:", exp.file, "..."))
 
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
@@ -190,7 +190,7 @@ getInput1 <- function(sel.files,
     beta_out <- NULL
     se_out <- NULL
     for (out.file in out.files) {
-        print(paste("loading data from outcome:", out.file, "..."))
+        message(paste("loading data from outcome:", out.file, "..."))
 
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
@@ -277,7 +277,7 @@ getInput1 <- function(sel.files,
 
     data.sel <- data.frame(SNP = sel.SNPs, pval = pvals)
 
-    print("Start clumping using PLINK ...")
+    message("Start clumping using PLINK ...")
 	data.sel <- plink_clump(data.sel, plink_exe,
                             plink_refdat, clump_r2 = clump_r2)
     sel.SNPs <- as.character(data.sel$SNP)
@@ -312,7 +312,7 @@ getInput1 <- function(sel.files,
     meta_data <- dat[as.character(sel.SNPs), c("SNP", "effect_allele",
                                                "other_allele")]
 
-    print(paste(nrow(beta_exp), "independent genetic instruments extracted. Done!"))
+    message(paste(nrow(beta_exp), "independent genetic instruments extracted. Done!"))
 
     pvals <- pvals[sel.SNPs]
     names(pvals) <- sel.SNPs
