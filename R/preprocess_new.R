@@ -1,17 +1,33 @@
-loadRData <- function(fileName){
-    #loads an RData file, and returns it
-    load(fileName)
-    get(ls()[ls() != "fileName"])
+#' Loads an R data file, and returns it
+#'
+#' @param file Name of the R data file (.rda or .RData).
+#' @return First object in the R data file.
+#'
+load_R_data <- function(file){
+    #
+    load(file_name)
+    object_names <- ls()[ls() != "file_name"]
+    if (length(object_names) > 1) {
+        warning(paste0("More than one object in",
+                       file,
+                       ". Only loading the first object called ",
+                       object_names[1]))
+    }
+    get(object_names[1])
 }
 
-
-#' Read GWAS summary statistics data
+#' Read one GWAS summary statistics dataset
+#'
+#' @param file Name of the GWAS summary statistics file
+#' @param message Logical indicator for message printing
+#'
+#' @return A \code{data.table} object.
+#'
+#' @details The dataset must contain the following columns: SNP, effect_allele, other_allele, beta, se. When there are duplicated SNPs, only the first entry is kept.
 #'
 #' @importFrom tools file_ext
-#' @importFrom data.table fread
+#' @importFrom data.table fread data.table
 #'
-#'
-
 read_gwas_summary <- function(file, message = TRUE) {
 
     if (message) {
@@ -19,70 +35,84 @@ read_gwas_summary <- function(file, message = TRUE) {
     }
 
     if (file_ext(file) %in% c("rda", ".rData")) {
-        dat <- loadRData(file)
+        dat <- data.table(load_R_data(file))
     } else {
         dat <- fread(file)
     }
-    dat
+
+    ## Check necessary columns
+    necessary_columns <- c("SNP", "effect_allele", "other_allele", "beta", "se")
+    missing_columns <- setdiff(necessary_columns, names(dat))
+    if (length(missing_columns) > 1){
+        stop(paste0("The following columns are missing in ", file, ":", missing_columns, "."))
+    }
+
+    ## Compute p-values if not already present
+    if (!("pval" %in% names(dat))) {
+        dat$pval <- pnorm(- abs(dat$beta / dat$se)) * 2
+    }
+
+    ## Only return data columns that GRAPPLE is going to use
+    dat[!duplicated(dat$SNP), c(necessary_columns, "pval")]
 }
 
-#' Get intersection of the SNPs in GWAS summary datasets
+#' Get intersection of the SNPs in several GWAS summary datasets
 #'
-#' @import data.table
+#' @param files A vector of file names
+#' @param message Logical indicator for message printing
 #'
-#' @details The first file is the selection dataset.
+#' @importFrom data.table merge
 #'
-get_snp_intersection <- function(files, message = TRUE, pval_thres = NULL) {
+#' @return A \code{data.table} object with the SNP name and p-values in all summary datasets.
+#'
+get_snp_intersection <- function(files, message = TRUE) {
 
     message("Finding intersection of SNPs from all datasets...")
-    sel_dat <- read_gwas_summary(files[1], message)
-    snp_intersection <- unique(sel_dat$SNP)
+    dat <- read_gwas_summary(files[1], message)
+    dat <- dat[, c("SNP", "pval")]
 
     if (length(files) > 1) {
         for (file in files[-1]) {
 
             dat_new <- read_gwas_summary(file, message)
-            
-            if (!is.null(pval_thres)) {
-                dat_new$SNP <- dat_new$SNP[dat_new$pval < pval_thres] # only take snps with pval below threshold if given (used for marker selection)
-            }
-            
-            snp_intersection <- intersect(snp_intersection, dat_new$SNP)
+
+            dat <- merge(dat, dat_new[, c("SNP", "pval")],
+                         by = "SNP",
+                         suffixes = c("", paste0("_", file)))
         }
     }
 
-    output <- sel_dat[SNP %in% snp_intersection, c("SNP", "pval")]
-    output[!duplicated(SNP), ]
+    names(dat)[names(dat) == "pval"] <- paste0("pval_", files[1])
+    dat
 
 }
 
 #' Extract selected SNPs from data
 #'
-#' @examples
-#' files <- file.path("../data", list.files("../data"))
-#' tmp <- get_snp_intersection(files)
-#' tmp2 <- plink_clump(tmp, "../util/plink_mac/plink", refdat = "../util/data_maf0.01_rs")
-#' dat <- extract_data(files, tmp2$SNP)
-#' dat <- harmonise_data_list(dat)
+#' @param files A vector of file names
+#' @param SNP_list If not null, only returns SNPs in this list; otherwise returns the original dataset.
+#' @param message Logical indicator for message printing
+#'
+#' @return A list of data tables, each corresponding to one file.
 #'
 extract_data <- function(files, SNP_list = NULL, message = TRUE) {
 
     dat <- list()
     for (i in 1:length(files)) {
         dat[[i]] <- read_gwas_summary(files[i], message = message)
-        dat[[i]] <- dat[[i]][SNP %in% SNP_list]
-        dat[[i]] <- dat[[i]][!duplicated(SNP), ]
+        if (!is.null(SNP_list)) {
+            dat[[i]] <- dat[[i]][SNP %in% SNP_list]
+        }
     }
     dat
 }
 
 #' Harmonise a list of GWAS summary data tables
 #'
-#' Input: dat, a list of dataframes
-#' Output: dat_new, a list of (harmonised) dataframes
+#' @param dat A list of \code{data.table} objects containing GWAS summary data (typically returned by \code{extract_data})
+#' @param fast Whether to use a fast implementation of GWAS data harmonisation.
 #'
-#' mode = 1 for TwoSampleMR hormonise_data
-#' mode = 2 for GRAPPLE harmonise_data
+#' @details When \code{fast} is \code{TRUE}, this function uses a modification of the \emph{TwoSampleMR::harmonise_data} that skips certain checks.
 #'
 #' @importFrom TwoSampleMR harmonise_data
 #'
@@ -99,18 +129,18 @@ harmonise_data_list <- function(dat, fast = T) {
     stopifnot(length(dat) > 1)
 
     for (i in 2:length(dat)) {
-        ## Format and harmonise with the reference dataset
-        data2 <- formatData(dat[[i]], "outcome")
-        if (!("outcome" %in% colnames(data2))) {
-            data2[, "outcome"] <- rep("outcome", nrow(data2)) }
 
         if (fast == T) {
-            data2 <- suppressMessages(harmonise_data1(data1, data2))
+            data2 <- suppressMessages(harmonise_data_fast(data1, data2))
         } else {
+            ## Format and harmonise with the reference dataset
+            data2 <- formatData(dat[[i]], "outcome")
+            if (!("outcome" %in% colnames(data2))) {
+                data2[, "outcome"] <- rep("outcome", nrow(data2))
+            }
+
             data2 <- suppressMessages(harmonise_data(data1, data2))
         }
-
-
 
         ## Extract the columns corresponding to the new dataset
         data2 <- data2[data2$mr_keep, ]
@@ -135,7 +165,6 @@ harmonise_data_list <- function(dat, fast = T) {
     stopifnot(check_same(lapply(dat_new, function(x) x$effect_allele)))
     stopifnot(check_same(lapply(dat_new, function(x) x$other_allele)))
 
-
     message('Done harmonising.')
     dat_new
 }
@@ -146,28 +175,30 @@ harmonise_data_list <- function(dat, fast = T) {
 
 # select SNPs for main data and correlation
 
-selectSNPs <- function(files = NULL, snp_inter = NULL, max_p_thres = 1, clump_r2 = 0.001, cal_cor = T,
-                       p_thres_cor = 0.5, plink_exe = './plink',
-                       plink_refdat){
+selectSNPs <- function(files = NULL,
+                       snp_inter = NULL,
+                       max_pval_files = files,
+                       max_pval_thres = 1,
+                       min_pval_files = files,
+                       min_pval_thres = 0,
+                       clump = FALSE,
+                       clump_r2 = 0.001,
+                       plink_exe = './plink',
+                       plink_refdat) {
+
     message("Selecting SNPs for inference and correlation estimation...")
-    
+
     if (is.null(snp_inter)) {
         snp_inter <- get_snp_intersection(files)
     }
 
-
-    # if calculating correlation, use non-significant SNPs (pval > 0.5) without LD clumping
-    if (cal_cor) {
-        cor_SNPs <- as.character(snp_inter$SNP[snp_inter$pval > p_thres_cor]) # (no bonferroni correction here)
-    } else {
-        cor_SNPs <- NULL
-    }
+    ## TODO: Select SNPs based on p-values
 
 
     message("Start clumping using PLINK ...")
     tmp2 <- plink_clump(snp_inter, plink_exe, refdat = plink_refdat, clump_r2 = clump_r2,
-                        clump_p1 = max_p_thres)
-    
+                        clump_p1 = max_pval_thres)
+
     sel_SNPs <- as.character(tmp2$SNP) # selected SNPs
     sel_SNPs_pvals <- tmp2$pval # keep pvals for marker SNPs pval threshold
 
@@ -177,14 +208,14 @@ selectSNPs <- function(files = NULL, snp_inter = NULL, max_p_thres = 1, clump_r2
 
 
 getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
-                     cor_SNPs = NULL, p_thres_cor = (1-1e-3), cal_cor = TRUE,
+                     cor_SNPs = NULL, pval_thres_cor = (1-1e-3), cal_cor = TRUE,
                      mar_SNPs = NULL,
                      get_marker_candidates = T, marker_p_source = "exposure",
-                     marker_p_thres = 1e-5,
+                     marker_pval_thres = 1e-5,
                      clump_r2_formarkers = 0.05,
                      plink_exe = "./plink",
                      plink_refdat = "./util/data_maf0.01_rs_ref",
-                     max_p_thres = 0.01, clump_r2 = 0.001) {
+                     max_pval_thres = 0.01, clump_r2 = 0.001) {
 
     num_sel <- length(sel_files)
     num_exp <- length(exp_files)
@@ -197,16 +228,16 @@ getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
             message("Marker candidates will not be obtained as number of risk factors k > 1")
         get.marker.candidates <- F
     }
-    
-    
+
+
     if (is.null(sel_SNPs)){
-        temp <- selectSNPs(files, max_p_thres, clump_r2, p_thres_cor, cal_cor, plink_exe,
+        temp <- selectSNPs(files, max_pval_thres, clump_r2, pval_thres_cor, cal_cor, plink_exe,
                            plink_refdat)
-        
+
         if (get_marker_candidates & (marker_p_source == "selection")) {
             snp_inter <- temp[[3]] # used later for getting markers
         }
-        
+
         sel_SNPs <- temp[[1]]
         cor_SNPs <- temp[[2]]
 
@@ -237,39 +268,39 @@ getInput <- function(sel_files, exp_files, out_files, sel_SNPs = NULL,
         message('Correlation matrix computed.')
         head(corr)
     }
-    
+
     if (get_marker_candidates & is.null(mar_SNPs)) {
         if (marker_p_source == "selection") {
             message('Extracting marker data, source = selection...')
-            tmp <- selectSNPs(files = NULL, snp_inter = snp_inter, max_p_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
-            p_thres_cor = 0.5, plink_exe = './plink', plink_refdat)
-            
+            tmp <- selectSNPs(files = NULL, snp_inter = snp_inter, max_pval_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
+            pval_thres_cor = 0.5, plink_exe = './plink', plink_refdat)
+
             mar_dat <- extract_data(files, mar_SNPs)
             mar_dat <- harmonise_data_list(dat, fast = T)
-            
+
             marker_data <- get_data(mar_dat)
-            marker_data$SNP <- marker_data$SNP[pval < marker_p_thres]
-            
+            marker_data$SNP <- marker_data$SNP[pval < marker_pval_thres]
+
             message('Extracted marker data.')
             head(mar_dat)
         } else {
             # If marker_p_source is exposure, only take intersection of exposure files and harmonise them
             message('Extracting Marker data, source = exposure...')
             exp_files <- files[1:num_exp]
-            mar_snp_inter <- get_snp_intersection(exp_files, pval_thres = marker_p_thres/num_sel) # bonferroni correction
-            
-            mar_SNPs <- selectSNPs(files = NULL, snp_inter = mar_snp_inter, max_p_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
-                              p_thres_cor = 0.5, plink_exe = './plink', plink_refdat)[[1]]
-            
+            mar_snp_inter <- get_snp_intersection(exp_files, pval_thres = marker_pval_thres/num_sel) # bonferroni correction
+
+            mar_SNPs <- selectSNPs(files = NULL, snp_inter = mar_snp_inter, max_pval_thres = 1, clump_r2 = clump_r2_formarkers, cal_cor = F,
+                              pval_thres_cor = 0.5, plink_exe = './plink', plink_refdat)[[1]]
+
             mar_dat <- extract_data(exp_files, mar_SNPs)
             mar_dat <- harmonise_data_list(exp_files, fast = T)
-            
-            
+
+
             marker_data <- get_data(mar_dat)
             message('Marker data extracted')
         }
-        
-        
+
+
     }
 
 }

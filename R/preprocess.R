@@ -4,7 +4,7 @@
 #' This function has GWAS summary statistics data files as inputs, perform genetic instrument selection and return matrices that are ready to use for GRAPPLE
 #'
 #'
-#' @param sel.files A vector of the GWAS summary statistics file names for the risk factors SNP selection. Each GWAS file is a ".csv" or ".txt" file containing a data frame that at least has a column "SNP" for the SNP ids and "pval" for the p-values. The length of \code{sel.files} are not required to be the same as that of \code{exp.files} and the order of the files do not matter, while we strongly suggest having one selection file for each risk factor.  
+#' @param sel.files A vector of the GWAS summary statistics file names for the risk factors SNP selection. Each GWAS file is a ".csv" or ".txt" file containing a data frame that at least has a column "SNP" for the SNP ids and "pval" for the p-values. The length of \code{sel.files} are not required to be the same as that of \code{exp.files} and the order of the files do not matter, while we strongly suggest having one selection file for each risk factor.
 #' @param exp.files A vector of length \code{k} of the GWAS summary statistics file names of the \code{k} risk factors for getting the effect sizes and standard deviations. Each GWAS file should have a column "SNP" for the SNP ids, "beta" for the effect sizes, "se" for the standard deviation, "effect_allele" for the effect allele and "other_allele" for the other allele of the SNP.
 #' @param out.files The GWAS summary statistics file name for the disease data, can be a vector of length \code{m} to allow preprocessing \code{m} diseases simultaneously. Each GWAS file should have a column "SNP" for the SNP ids, "beta" for the effect sizes, "se" for the standard deviation, "effect_allele" for the effect allele and "other_allele" for the other allele of the SNP.
 #' @param plink_refdat The reference genotype files (.bed, .bim, .fam) for clumping using PLINK (loaded with --bfile).
@@ -87,15 +87,15 @@ getInput1 <- function(sel.files,
         } else {
             ori.snps <- sel.SNPs
             sel.SNPs <- union(sel.SNPs, sel.snps)
-            
+
             temp <- rep(1, length(sel.SNPs))
             names(temp) <- sel.SNPs
             temp[ori.snps] <- pvals # original pvals from prev loaded files
-            
+
             temp1 <- rep(1, length(sel.SNPs))
             names(temp1) <- sel.SNPs
             temp1[sel.snps] <- pvals.tmp # get new pvals from newest file loaded
-            
+
             ## when k > 1, take the minimum of k risk factors' p-value as selection p-value
             pvals <- pmin(temp, temp1)
             names(pvals) <- sel.SNPs
@@ -143,25 +143,25 @@ getInput1 <- function(sel.files,
         ## harmonize one dataset by one dataset
         if (!is.null(ref.data.exp)) {
             dat <- formatData(dat, "outcome")
-            
-            ref.data.exp <- suppressMessages(harmonise_data1(ref.data.exp, dat))
+
+            ref.data.exp <- suppressMessages(harmonise_data_fast(ref.data.exp, dat))
             ref.data.exp <- ref.data.exp[ref.data.exp$mr_keep, ]
             ref.data.exp$SNP <- as.character(ref.data.exp$SNP)
-            
-            
+
+
             dat <- ref.data.exp[, c(1, grep(".outcome", colnames(ref.data.exp)))] # extract SNP and .outcome columns
             colnames(dat) <- gsub(".outcome", "", colnames(dat)) # remove .outcome from colnames of dat
             ref.data.exp <- ref.data.exp[, c(1, grep(".exposure", colnames(ref.data.exp)))] # set ref.dat.exp to SNP and .exposure columns
-            
+
             SNPs.kept <- unique(ref.data.exp$SNP) # SNPs kept after harmonising
             beta_exp <- beta_exp[SNPs.kept, , drop = F]
             se_exp <- se_exp[SNPs.kept, , drop = F]
-            
+
             rownames(ref.data.exp) <- make.names(ref.data.exp$SNP, unique = T)
             ref.data.exp <- ref.data.exp[SNPs.kept, , drop = F]
             rownames(dat) <- make.names(dat$SNP, unique = T)
             dat <- dat[SNPs.kept, , drop = F]
-            
+
             # flip sign of beta_exp if different to ref.data.exp
             flip <- rep(1, nrow(beta_exp))
             flip[sign(beta_exp[, 1]) != sign(ref.data.exp$beta.exposure)] <- -1
@@ -204,14 +204,14 @@ getInput1 <- function(sel.files,
 
         ## harmonize one dataset by one dataset
         dat <- formatData(dat, "outcome")
-        ref.data.exp <- suppressMessages(harmonise_data1(ref.data.exp, dat))
+        ref.data.exp <- suppressMessages(harmonise_data_fast(ref.data.exp, dat))
         ref.data.exp <- ref.data.exp[ref.data.exp$mr_keep, ]
         ref.data.exp$SNP <- as.character(ref.data.exp$SNP)
-        
+
         dat <- ref.data.exp[, c(1, grep(".outcome", colnames(ref.data.exp)))]
         colnames(dat) <- gsub(".outcome", "", colnames(dat))
         ref.data.exp <- ref.data.exp[, c(1, grep(".exposure", colnames(ref.data.exp)))]
-        
+
         SNPs.kept <- unique(ref.data.exp$SNP)
         beta_exp <- beta_exp[SNPs.kept, , drop = F]
         se_exp <- se_exp[SNPs.kept, , drop = F]

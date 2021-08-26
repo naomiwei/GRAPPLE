@@ -30,7 +30,7 @@
 #'
 #' @keywords internal
 #' @return Data frame with harmonised effects and alleles
-harmonise_data1 <- function(exposure_dat, outcome_dat, action=2)
+harmonise_data_fast <- function(exposure_dat, outcome_dat, action=2)
 {
 	stopifnot(all(action %in% 1:3))
 
