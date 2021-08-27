@@ -4,8 +4,16 @@
 \alias{harmonise_data_list}
 \title{Harmonise a list of GWAS summary data tables}
 \usage{
-harmonise_data_list(dat)
+harmonise_data_list(dat_list, fast = T)
+}
+\arguments{
+\item{fast}{Whether to use a fast implementation of GWAS data harmonisation.}
+
+\item{dat}{A list of \code{data.table} objects containing GWAS summary data (typically returned by \code{extract_data})}
 }
 \description{
 Harmonise a list of GWAS summary data tables
+}
+\details{
+When \code{fast} is \code{TRUE}, this function uses a modification of the \emph{TwoSampleMR::harmonise_data} that skips certain checks.
 }

@@ -1,33 +1,43 @@
+#' Wrapper function to call PLINK
+#'
+#' @param dat A data frame containing SNPs and p-values
+#' @param plink_exe Command to execute PLINK
+#' @param refdat File path to reference genome data
+#' @param clump_kb PLINK argument clump-kb
+#' @param clump_p1 PLINK argument clump-p1
+#' @param clump_p2 PLINK argument clump-p2
+#' @param clump_r2 PLINK argument clump-r2 (R-squared for clumping)
+#' @param tempdir Temporary directory to save the output of PLINK
+#'
+#' @importFrom data.table fread fwrite
 #' @keywords internal
 #'
 plink_clump <- function(dat,
                         plink_exe,
-                        refdat,
-                        clump_kb = 10000,
-                        clump_r2 = 0.001,
+                        plink_refdat,
+                        clump_kb = 1000,
+                        clump_r2 = 0.05,
                         clump_p1 = 1,
                         clump_p2 = 1,
-                        tempdir = "temp")
-{
-                                        # Make textfile
+                        tempdir = "temp") {
+
+    if (prod(c("SNP", "pval") %in% colnames(dat)) != 1) {
+        stop("The data frame must contain the following columns: SNP, pval.")
+    }
     snps <- dat$SNP
-    if (!("pval" %in% colnames(dat)))
-        dat$pval <- dat$pval.exposure
     pvals <- pmin(1, dat$pval)
+
+    ## Make textfile
     dir.create(file.path(tempdir), showWarnings = FALSE)
 
     shell <- ifelse(Sys.info()['sysname'] == "Windows", "cmd", "sh")
     fn <- tempfile(tmpdir = tempdir)
-    require(data.table)
+
     fwrite(data.frame(SNP=snps, P=pvals), file=fn, row=F, col=T, qu=F, sep = " ")
 
     fun2 <- paste0(
-      # shQuote(plink_exe),
         plink_exe,
-      #  shQuote("plink"),
-        #    " --bfile ", shQuote(refdat, type=shell),
-    #    " --clump ", shQuote(fn, type=shell),
-        " --bfile ", refdat,
+        " --bfile ", plink_refdat,
         " --clump ", fn,
         " --clump-p1 ", clump_p1,
         " --clump-p2 ", clump_p2,
@@ -37,7 +47,7 @@ plink_clump <- function(dat,
     )
     system(fun2, ignore.stdout = T, ignore.stderr = T)
     a <- fread(paste(fn, ".clumped", sep=""), he=T)
-    ## a <- fread(paste(fn, sep=""), he=T)
+
     unlink(paste(fn, "*", sep=""))
     a <- a[, c(3, 5)]
     a$temp.p <- round(log10(a$P))
@@ -46,7 +56,7 @@ plink_clump <- function(dat,
 
     a <- a[, -(2:3)]
 
-	unlink(tempdir, recursive = T)
+    unlink(tempdir, recursive = T)
 
     return(a)
 }
@@ -56,7 +66,7 @@ plink_clump <- function(dat,
 #'
 formatData <- function(dat, cls = c("exposure", "outcome")) {
     cls <- match.arg(cls, c("exposure", "outcome"))
-    
+
     # add missing columns if needed
     for (nm in c("eaf", "id")) {
         if (!(nm %in% colnames(dat)))

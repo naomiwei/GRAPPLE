@@ -6,14 +6,16 @@
 \usage{
 extract_data(files, SNP_list = NULL, message = TRUE)
 }
+\arguments{
+\item{files}{A vector of file names.}
+
+\item{SNP_list}{If not null, only returns SNPs in this list; otherwise returns the original dataset.}
+
+\item{message}{Logical indicator for message printing.}
+}
+\value{
+A list of data tables, each corresponding to one file.
+}
 \description{
 Extract selected SNPs from data
-}
-\examples{
-files <- file.path("../data", list.files("../data"))
-tmp <- get_snp_intersection(files)
-tmp2 <- plink_clump(tmp, "../util/plink_mac/plink", refdat = "../util/data_maf0.01_rs")
-dat <- extract_data(files, tmp2$SNP)
-dat <- harmonise_data_list(dat)
-
 }
