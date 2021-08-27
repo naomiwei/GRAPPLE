@@ -175,7 +175,11 @@ harmonise_data_list <- function(dat, fast = T) {
 
 # select SNPs for main data and correlation
 
-selectSNPs <- function(files = NULL,
+
+    
+    
+    
+pval_filter_SNPs <- function(files = NULL,
                        snp_inter = NULL,
                        max_pval_files = files,
                        max_pval_thres = 1,
@@ -193,17 +197,25 @@ selectSNPs <- function(files = NULL,
     }
 
     ## TODO: Select SNPs based on p-values
-
+    
+    max_pval_names <- paste0("pval_", max_pval_files)
+    minimax_pval <- pmin(snp_inter[max_pval_names]) # e.g. at least one pval to be below threshold
+    
+    min_pval_names <- paste0("pval_", min_pval_files)
+    min_pval <- pmin(snp_inter[min_pval_names]) # e.g. need all pvals > 0.5
+    
+    snp_inter$SNP <- snp_inter$SNP[minimax_pval < max_pval_thres]
+    snp_inter$SNP <- snp_inter$SNP[min_pval > min_pval_thres]
 
     message("Start clumping using PLINK ...")
     tmp2 <- plink_clump(snp_inter, plink_exe, refdat = plink_refdat, clump_r2 = clump_r2,
                         clump_p1 = max_pval_thres)
 
     sel_SNPs <- as.character(tmp2$SNP) # selected SNPs
-    sel_SNPs_pvals <- tmp2$pval # keep pvals for marker SNPs pval threshold
 
 
-    list(sel_SNPs, cor_SNPs, snp_inter, sel_SNPs_pvals)
+
+    list(sel_SNPs, cor_SNPs, snp_inter)
 }
 
 
