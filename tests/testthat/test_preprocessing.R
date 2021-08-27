@@ -30,28 +30,35 @@ if (shell == "Windows") {
 }
 
 
-sel.files <- "../../data/BMI-giant17eu-subset.csv"
-exp.files <- "../../data/CAD-c4d11-subset.csv"
-out.files <- "../../data/T2D-diagram12-Im-subset.csv"
-files <- c(sel.files, exp.files, out.files)
+sel_files <- "../../data/BMI-giant17eu-subset.csv"
+exp_files <- "../../data/CAD-c4d11-subset.csv"
+out_files <- "../../data/T2D-diagram12-Im-subset.csv"
+files <- c(sel_files, exp_files, out_files)
 
-suppressMessages(tmp <- get_snp_intersection(files))
+suppressMessages(SNP_inter <- get_SNP_intersection(files))
 
 test_that("Get intersection of SNPs", {
-    expect_equal(nrow(tmp), 2644)
+    expect_equal(nrow(SNP_inter), 2644)
 })
 
-suppressMessages(tmp2 <- plink_clump(tmp, plink_exe, refdat = "../../util/data_maf0.01_rs"))
+suppressMessages(
+    snps_inference <-
+        filter_SNPs(sel_files, exp_files, out_files,
+                    SNP_inter,
+                    utility = "inference",
+                    plink_exe = plink_exe,
+                    plink_refdat = "../../util/data_maf0.01_rs")
+)
 
-test_that("LD clumping using PLINK", {
-    expect_equal(nrow(tmp2), 530)
+test_that("Filter SNPs using LD clumping", {
+    expect_equal(length(snps_inference), 67)
 })
 
-suppressMessages(dat_list <- extract_data(files, tmp2$SNP))
+suppressMessages(dat_list <- extract_data(files, snps_inference))
 
 test_that("Data extraction", {
     expect_equal(length(dat_list), 3)
-    expect_equal(sapply(dat_list, nrow), rep(530, 3))
+    expect_equal(sapply(dat_list, nrow), rep(67, 3))
 })
 
 suppressMessages(dat_list <- harmonise_data_list(dat_list))
@@ -66,10 +73,16 @@ test_that("Data harmonising", {
     expect_equal(check_same(lapply(dat_list, function(x) x$other_allele)), 1)
 })
 
-inference_data <- get_data(dat_list)
-minimal_object_names <- c("meta_data", "beta_exp", "se_exp", "beta_out", "se_out", "selection_pvals")
+inference_data <- format_data(dat_list, exp_files = exp_files, out_files = out_files)
 
+minimal_object_names <- c("meta_data", "beta_exp", "se_exp", "beta_out", "se_out")
 test_that("Get inference data", {
-    expect_equal(intersect(minimal_object_names, names(inference_data), minimal_object_names))
-    expect_equal(nrow(inference_data$meta_data), 530)
+    expect_equal(intersect(minimal_object_names, names(inference_data)), minimal_object_names)
+    expect_equal(nrow(inference_data$meta_data), 67)
 })
+
+## data <- data.frame(gamma_exp = inference_data$beta_exp,
+##                    gamma_out = inference_data$beta_out,
+##                    se_exp = inference_data$se_exp,
+##                    se_out = inference_data$se_out)
+## grappleRobustEst(data)

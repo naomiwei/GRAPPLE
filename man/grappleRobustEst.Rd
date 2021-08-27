@@ -51,12 +51,14 @@ that stores the selection p-value of each SNP.}
 }
 \value{
 A list with elements
+\describe{
 \item{beta.hat}{Point estimates of \code{beta}}
 \item{tau2.hat}{Point estimates of the pleiotropic effect variance \code{tau2} if the argument \code{tau2} is set to NULL}
 \item{beta.variance}{Estimated covariance matrix of \code{beta.hat}}
 \item{tau2.se}{Estimated standard deviation of \code{tau2.hat}}
 \item{beta.p.vaue}{A vector of p-values where the kth element is the p-value for whether \code{beta_k = 0}}
 \item{std.resid}{Returned if \code{diagnosis} is TRUE. A vector of standardized residuals of each SNP}
+}
 }
 \description{
 The main function of GRAPPLE to estimate causal effects of risk factors \code{beta} under a random effect model of the pleiotropic effects.

@@ -2,10 +2,22 @@
 % Please edit documentation in R/preprocess_new.R
 \name{read_gwas_summary}
 \alias{read_gwas_summary}
-\title{Read GWAS summary statistics data}
+\title{Read one GWAS summary statistics dataset}
 \usage{
 read_gwas_summary(file, message = TRUE)
 }
-\description{
-Read GWAS summary statistics data
+\arguments{
+\item{file}{Name of the GWAS summary statistics file}
+
+\item{message}{Logical indicator for message printing}
 }
+\value{
+A \code{data.table} object.
+}
+\description{
+Read one GWAS summary statistics dataset
+}
+\details{
+The dataset must contain the following columns: SNP, effect_allele, other_allele, beta, se. When there are duplicated SNPs, only the first entry is kept.
+}
+\keyword{internal}
