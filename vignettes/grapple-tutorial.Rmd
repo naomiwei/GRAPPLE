@@ -1,0 +1,63 @@
+---
+title: "Tutorial for the R package GRAPPLE"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{grapple-tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+# library(GRAPPLE)
+devtools::load_all()
+library(data.table)
+```
+
+GRAPPLE is a framework for summary data Mendelian randomization. This document goes through the main steps of using the GRAPPLE package.
+
+# Introduction
+
+TODO: Explain the big picture.
+- Three kinds of datasets.
+- Download files: test datasets; PLINK; Reference data. (Ask maintainers of gwas2vcf about missing reference data files.)
+
+# Preprocessing GWAS summary data for GRAPPLE
+
+The first step is to get SNPs that appear in all GWAS datasets:
+```{r}
+sel_files <- "../data/BMI-giant17eu-subset.csv"
+exp_files <- "../data/CAD-c4d11-subset.csv"
+out_files <- "../data/T2D-diagram12-Im-subset.csv"
+files <- c(sel_files, exp_files, out_files)
+
+(SNP_inter <- get_SNP_intersection(files))
+```
+Obtain independent SNPs for statistical inference: 
+TODO:
+1. Explain the different utilities of filter_SNPs;
+2. Explain the input and output format.
+
+```{r, echo=FALSE}
+options(datatable.print.topn = 2)
+options(datatable.print.nrows = 2)
+```
+
+
+```{r}
+plink_exe <-"../util/plink_mac/plink"
+snps_inference <-
+    filter_SNPs(sel_files, exp_files, out_files,
+                SNP_inter,
+                utility = "inference",
+                plink_exe = plink_exe,
+                plink_refdat = "../util/data_maf0.01_rs")
+(dat_list <- extract_data(files, snps_inference))
+```
+
