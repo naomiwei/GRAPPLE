@@ -133,7 +133,7 @@ harmonise_data_list <- function(dat_list, fast = T) {
 
     dat_new <- list()
     SNP_list <- dat_list[[1]]$SNP
-    dat_new[[1]] <- dat_list[[1]]
+    dat_new[[1]] <- dat_list[[1]][order(SNP)]
 
     ## Reference dataset
     data1 <- formatData(dat_list[[1]], "exposure")
