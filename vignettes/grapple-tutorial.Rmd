@@ -1,0 +1,104 @@
+---
+title: "Tutorial for the R package GRAPPLE"
+output: rmarkdown::html_vignette
+bibliography: references.bib 
+vignette: >
+  %\VignetteIndexEntry{Tutorial for the R package GRAPPLE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+```
+
+```{r setup}
+# library(GRAPPLE)
+
+devtools::load_all()
+library(data.table)
+
+
+```
+
+GRAPPLE is a framework for summary data Mendelian randomization. This document goes through the main steps of using the GRAPPLE package.
+
+# Introduction
+
+*TODO: Explain the big picture. - Three kinds of datasets. - Download files: test datasets; PLINK; Reference data. (Ask maintainers of gwas2vcf about missing reference data files.)*
+
+In order to perform MR, we need to go through the following main steps:
+
+1.  **Load** GWAS datasets and find the SNPs that are available in all datasets (the intersection of SNPs in each of the loaded datasets)
+2.  **Harmonise** the effect sizes for the SNPs on the exposures and the outcomes to be for the same reference allele
+3.  Perform inference
+
+We will need to load three types of GWAS summary statistics datasets:
+
+1.  **Selection**:
+
+    -   Used to select *significant* and *independent* SNPs for inference.
+
+    -   We use [PLINK](https://www.cog-genomics.org/plink/) to perform LD clumping to select independent SNPs since this simplifies calculations and reduces bias. Once downloaded, the file path to the plink.exe file will need to be specified as an argument.
+
+    -   We suggest that one selection dataset is used for each risk factor (exposure) dataset loaded.
+
+2.  **Exposure**
+
+    -   Used to estimate the sizesand standard deviations of the associations between each of the SNPs we have selected and each of the relevant exposures
+
+    -   There should be one exposure dataset loaded for each of the exposures we are interested in.
+
+3.  **Outcome**:
+
+    -   Used to estimate the sizesand standard deviations of the associations between each of the SNPs we have selected and each of the relevant outcomes/diseases
+
+    -   There should be one outcome dataset loaded for each of the exposures we are interested in.
+
+Note: It is important that we have a separate selection dataset as using the exposure dataset to select SNPs introduces bias (see @zhao2020statistical ).
+
+We also need to load a reference file: for the purposes of this tutorial we are using [insert download link for ref data files].
+
+# Preprocessing GWAS summary data for GRAPPLE
+
+The first step is to get SNPs that appear in all GWAS datasets:
+
+```{r}
+sel_files <- "../data/BMI-giant17eu-subset.csv"
+exp_files <- "../data/CAD-c4d11-subset.csv"
+out_files <- "../data/T2D-diagram12-Im-subset.csv"
+files <- c(sel_files, exp_files, out_files)
+
+(SNP_inter <- get_SNP_intersection(files))
+```
+
+To obtain independent SNPs for statistical inference, we use the filter_SNPs. This has four different utility modes:
+
+-   "inference": for selecting significant and independent SNPs for MR inference
+
+-   "marker_sel" and "marker_exp": to select marker SNPs for interpretation of different modes (lower thresholds are used for ease of interpretation), with p-values sourced from the selection, exposure datasets respectively.
+
+-   "correlation": for selecting non-significant SNPs (that were not used for inference) in order to estimate the correlation matrix
+
+For each of the modes, we input a list of selection, exposure, and outcome files and filter_SNPs returns a dataframe of selected SNPs with the pvalues from each file.
+
+```{r, echo=FALSE}
+options(datatable.print.topn = 2)
+options(datatable.print.nrows = 2)
+```
+
+```{r}
+#plink_exe <-"../util/plink_mac/plink"
+plink_exe <- "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/plink"
+snps_inference <-
+    filter_SNPs(sel_files, exp_files, out_files,
+                SNP_inter,
+                utility = "inference",
+                plink_exe = plink_exe,
+                plink_refdat = "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/util/data_maf0.01_rs")
+(dat_list <- extract_data(files, snps_inference))
+```

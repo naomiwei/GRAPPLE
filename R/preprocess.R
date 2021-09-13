@@ -16,7 +16,7 @@
 #' @param marker.p.source source of p-values of mode markers, a string of either "exposure" or "selection". Default is "exposure" for obtaining more markers.
 #' @param clump_r2 The clumping r2 threshold in PLINK for genetic instrument selection. Default is set to 0.001 for selection of independent SNPs.
 #' @param clump_r2_formarkers The clumping r2 threshold in PLINK. Default is set to 0.05 for selection of candidates for the marker SNPs.
-#' @param plink_exe The name of the plink exe. Default is NULL, which uses "plink". For users with Linux systems, one may want to have a different name, like "./plink" depending on where they install plink 
+#' @param plink_exe The name of the plink exe. Default is NULL, which uses "plink". For users with Linux systems, one may want to have a different name, like "./plink" depending on where they install plink
 #'
 #' @return A list of selected summary statistics, which include
 #' \item{data}{A data frame of size \code{p * (3 + 2k + 2m + 1)} for the effect sizes of \code{p} number of selected independent SNPs (instruments) on \code{k} risk factors (exposures).
@@ -29,8 +29,10 @@
 #'
 #' @importFrom data.table fread
 #' @importFrom tools file_ext
+#' @importFrom TwoSampleMR harmonise_data
+#'
 #' @export
-getInput <- function(sel.files,
+getInput1 <- function(sel.files,
                      exp.files,
                      out.files,
                      plink_refdat,
@@ -44,7 +46,7 @@ getInput <- function(sel.files,
 					 plink_exe = NULL) {
     if (length(exp.files) > 1) {
         if (get.marker.candidates)
-            print("Marker candidates will not be obtained as number of risk factors k > 1")
+            message("Marker candidates will not be obtained as number of risk factors k > 1")
         get.marker.candidates <- F
     }
 
@@ -57,10 +59,10 @@ getInput <- function(sel.files,
 
     sel.SNPs <- NULL
     pvals <- NULL
-    Sel.SNPs.cor <- c()
+    sel.SNPs.cor <- c()
     k <- length(exp.files)
     for (file in sel.files) {
-        print(paste("loading data for selection:", file, "..."))
+        message(paste("loading data for selection:", file, "..."))
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
             load(file)
@@ -85,13 +87,16 @@ getInput <- function(sel.files,
         } else {
             ori.snps <- sel.SNPs
             sel.SNPs <- union(sel.SNPs, sel.snps)
+
             temp <- rep(1, length(sel.SNPs))
             names(temp) <- sel.SNPs
-            temp[ori.snps] <- pvals
+            temp[ori.snps] <- pvals # original pvals from prev loaded files
+
             temp1 <- rep(1, length(sel.SNPs))
             names(temp1) <- sel.SNPs
-            temp1[sel.snps] <- pvals.tmp
-            ## when k > 1, take the minium of k risk factors' p-value as selection p-value
+            temp1[sel.snps] <- pvals.tmp # get new pvals from newest file loaded
+
+            ## when k > 1, take the minimum of k risk factors' p-value as selection p-value
             pvals <- pmin(temp, temp1)
             names(pvals) <- sel.SNPs
             rm(temp, temp1)
@@ -102,7 +107,7 @@ getInput <- function(sel.files,
 
     }
 
-    ## Bonferroni correction on the selected p-values when there are more than one risk factor
+    ## Bonferroni correction on the selected p-values when there is more than one risk factor
     pvals <- pvals * length(sel.files)
 
     beta_exp <- NULL
@@ -111,7 +116,7 @@ getInput <- function(sel.files,
     marker.SNPs <- NULL
     marker.pvals <- NULL
     for (exp.file in exp.files) {
-        print(paste("loading data from exposure:", exp.file, "..."))
+        message(paste("loading data from exposure:", exp.file, "..."))
 
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
@@ -138,19 +143,26 @@ getInput <- function(sel.files,
         ## harmonize one dataset by one dataset
         if (!is.null(ref.data.exp)) {
             dat <- formatData(dat, "outcome")
-            ref.data.exp <- suppressMessages(harmonise_data(ref.data.exp, dat))
+
+            ref.data.exp <- suppressMessages(harmonise_data_fast(ref.data.exp, dat))
             ref.data.exp <- ref.data.exp[ref.data.exp$mr_keep, ]
             ref.data.exp$SNP <- as.character(ref.data.exp$SNP)
-            dat <- ref.data.exp[, c(1, grep(".outcome", colnames(ref.data.exp)))]
-            colnames(dat) <- gsub(".outcome", "", colnames(dat))
-            ref.data.exp <- ref.data.exp[, c(1, grep(".exposure", colnames(ref.data.exp)))]
-            SNPs.kept <- unique(ref.data.exp$SNP)
+
+
+            dat <- ref.data.exp[, c(1, grep(".outcome", colnames(ref.data.exp)))] # extract SNP and .outcome columns
+            colnames(dat) <- gsub(".outcome", "", colnames(dat)) # remove .outcome from colnames of dat
+            ref.data.exp <- ref.data.exp[, c(1, grep(".exposure", colnames(ref.data.exp)))] # set ref.dat.exp to SNP and .exposure columns
+
+            SNPs.kept <- unique(ref.data.exp$SNP) # SNPs kept after harmonising
             beta_exp <- beta_exp[SNPs.kept, , drop = F]
             se_exp <- se_exp[SNPs.kept, , drop = F]
+
             rownames(ref.data.exp) <- make.names(ref.data.exp$SNP, unique = T)
             ref.data.exp <- ref.data.exp[SNPs.kept, , drop = F]
             rownames(dat) <- make.names(dat$SNP, unique = T)
             dat <- dat[SNPs.kept, , drop = F]
+
+            # flip sign of beta_exp if different to ref.data.exp
             flip <- rep(1, nrow(beta_exp))
             flip[sign(beta_exp[, 1]) != sign(ref.data.exp$beta.exposure)] <- -1
             beta_exp <- flip * beta_exp
@@ -178,7 +190,7 @@ getInput <- function(sel.files,
     beta_out <- NULL
     se_out <- NULL
     for (out.file in out.files) {
-        print(paste("loading data from outcome:", out.file, "..."))
+        message(paste("loading data from outcome:", out.file, "..."))
 
         file.type <- file_ext(file)
         if (file.type == "rda" || file.type == ".rData")
@@ -192,12 +204,14 @@ getInput <- function(sel.files,
 
         ## harmonize one dataset by one dataset
         dat <- formatData(dat, "outcome")
-        ref.data.exp <- suppressMessages(harmonise_data(ref.data.exp, dat))
+        ref.data.exp <- suppressMessages(harmonise_data_fast(ref.data.exp, dat))
         ref.data.exp <- ref.data.exp[ref.data.exp$mr_keep, ]
         ref.data.exp$SNP <- as.character(ref.data.exp$SNP)
+
         dat <- ref.data.exp[, c(1, grep(".outcome", colnames(ref.data.exp)))]
         colnames(dat) <- gsub(".outcome", "", colnames(dat))
         ref.data.exp <- ref.data.exp[, c(1, grep(".exposure", colnames(ref.data.exp)))]
+
         SNPs.kept <- unique(ref.data.exp$SNP)
         beta_exp <- beta_exp[SNPs.kept, , drop = F]
         se_exp <- se_exp[SNPs.kept, , drop = F]
@@ -263,7 +277,7 @@ getInput <- function(sel.files,
 
     data.sel <- data.frame(SNP = sel.SNPs, pval = pvals)
 
-    print("Start clumping using PLINK ...")
+    message("Start clumping using PLINK ...")
 	data.sel <- plink_clump(data.sel, plink_exe,
                             plink_refdat, clump_r2 = clump_r2)
     sel.SNPs <- as.character(data.sel$SNP)
@@ -298,7 +312,7 @@ getInput <- function(sel.files,
     meta_data <- dat[as.character(sel.SNPs), c("SNP", "effect_allele",
                                                "other_allele")]
 
-    print(paste(nrow(beta_exp), "independent genetic instruments extracted. Done!"))
+    message(paste(nrow(beta_exp), "independent genetic instruments extracted. Done!"))
 
     pvals <- pvals[sel.SNPs]
     names(pvals) <- sel.SNPs
