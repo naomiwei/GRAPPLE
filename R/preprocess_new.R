@@ -61,9 +61,10 @@ read_gwas_summary <- function(file, message = TRUE) {
     dat[!duplicated(dat$SNP), ..output_columns]
 }
 
-#' Get intersection of the SNPs in several GWAS summary datasets
+#' Get the intersection of the SNPs in several GWAS summary datasets
 #'
 #' @param files A vector of file names
+#' @param file_labels A vector of labels the same length as \code{files} used to label the different p-value columns. If null, the original file names are used.
 #' @param message Logical indicator for message printing
 #'
 #' @import data.table
@@ -72,12 +73,20 @@ read_gwas_summary <- function(file, message = TRUE) {
 #'
 #' @export
 #'
-get_SNP_intersection <- function(files, message = TRUE) {
+get_SNP_intersection <- function(files, file_labels = NULL, message = TRUE) {
 
     message("Finding intersection of SNPs from all datasets...")
     dat <- read_gwas_summary(files[1], message)
     dat <- dat[, c("SNP", "pval")]
 
+    if (is.null(file_labels)) {
+        labels <- files
+    } else {
+        labels <- file_labels
+    }
+    
+    names(labels) <- files
+    
     if (length(files) > 1) {
         for (file in files[-1]) {
 
@@ -85,11 +94,11 @@ get_SNP_intersection <- function(files, message = TRUE) {
 
             dat <- merge(dat, dat_new[, c("SNP", "pval")],
                          by = "SNP",
-                         suffixes = c("", paste0("_", file)))
+                         suffixes = c("", paste0("_", labels[file])))
         }
     }
 
-    names(dat)[names(dat) == "pval"] <- paste0("pval_", files[1])
+    names(dat)[names(dat) == "pval"] <- paste0("pval_", labels[1])
     dat
 
 }
@@ -132,6 +141,7 @@ harmonise_data_list <- function(dat_list, fast = T) {
     message("Harmonising a list of data...")
 
     dat_new <- list()
+    
     SNP_list <- dat_list[[1]]$SNP
     dat_new[[1]] <- dat_list[[1]]
 
@@ -162,17 +172,25 @@ harmonise_data_list <- function(dat_list, fast = T) {
         data2 <- data2[, c(1, grep(".outcome", colnames(data2))), drop = FALSE]
 
         colnames(data2) <- gsub(".outcome", "", colnames(data2))
-
-        dat_new[[i]] <- data.table(data2)
+        data2 <- data.table(data2)
+        dat_new[[i]] <- data2
+        
         SNP_list <- intersect(SNP_list, data2$SNP)
     }
 
     dat_new <- lapply(dat_new, function(x) x[SNP %in% SNP_list][!duplicated(SNP), ])
+    
+    # Order SNPs consistently and make sure effect_allele and other_alle
+    dat_new <- lapply(dat_new, function(x) x[order(SNP)])
+    dat_new <- lapply(dat_new, 
+                      function(x) x[,(c("effect_allele", "other_allele")):= lapply(.SD, as.character), .SDcols = c("effect_allele", "other_allele")])
 
     ## Check the data tables in the list have the same SNP, effect_allele, and reference_allele
     check_same <- function(x) {
         prod(sapply(x, all.equal, x[[1]])) == 1
     }
+    
+    
     stopifnot(check_same(lapply(dat_new, function(x) x$SNP)))
     stopifnot(check_same(lapply(dat_new, function(x) x$effect_allele)))
     stopifnot(check_same(lapply(dat_new, function(x) x$other_allele)))

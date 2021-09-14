@@ -22,12 +22,16 @@ library(data.table)
 ## data <- data[SNP %in% snps_kept]
 ## fwrite(data, "../data/T2D-diagram12-Im-subset.csv")
 
+setwd("C:/Users/naomi/OneDrive/Documents/GitHub/GRAPPLE/tests/testthat")
+
 shell <- ifelse(Sys.info()['sysname'] == "Windows", "cmd", "sh")
-if (shell == "Windows") {
-    plink_exe <- "./plink"
+if (shell == "cmd") {
+    plink_exe <- "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/plink"
 } else {
     plink_exe <-"../../util/plink_mac/plink"
 }
+
+plink_refdat <- "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/util/data_maf0.01_rs"
 
 
 sel_files <- "../../data/BMI-giant17eu-subset.csv"
@@ -35,7 +39,7 @@ exp_files <- "../../data/CAD-c4d11-subset.csv"
 out_files <- "../../data/T2D-diagram12-Im-subset.csv"
 files <- c(sel_files, exp_files, out_files)
 
-suppressMessages(SNP_inter <- get_SNP_intersection(files))
+suppressMessages(SNP_inter <- get_SNP_intersection(files, file_labels = c("bmi", "cad", "t2d")))
 
 test_that("Get intersection of SNPs", {
     expect_equal(nrow(SNP_inter), 2644)
@@ -47,7 +51,7 @@ suppressMessages(
                     SNP_inter,
                     utility = "inference",
                     plink_exe = plink_exe,
-                    plink_refdat = "../../util/data_maf0.01_rs")
+                    plink_refdat = plink_refdat)
 )
 
 test_that("Filter SNPs using LD clumping", {

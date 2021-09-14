@@ -25,17 +25,24 @@ library(data.table)
 
 ```
 
+```{r, echo=FALSE}
+options(datatable.print.topn = 2)
+options(datatable.print.nrows = 2)
+```
+
 GRAPPLE is a framework for summary data Mendelian randomization. This document goes through the main steps of using the GRAPPLE package.
 
 # Introduction
 
-*TODO: Explain the big picture. - Three kinds of datasets. - Download files: test datasets; PLINK; Reference data. (Ask maintainers of gwas2vcf about missing reference data files.)*
-
-In order to perform MR, we need to go through the following main steps:
+In order to perform MR, we need to preprocess the data in four steps:
 
 1.  **Load** GWAS datasets and find the SNPs that are available in all datasets (the intersection of SNPs in each of the loaded datasets)
-2.  **Harmonise** the effect sizes for the SNPs on the exposures and the outcomes to be for the same reference allele
-3.  Perform inference
+
+2.  **Filter** this list of available SNPs: select SNPs that are significant and independent (using LD clumping)
+
+3.  **Harmonise** the effect sizes for the SNPs on the exposures and the outcomes to be for the same reference allele
+
+4.  **Format** the data to be in the format expected by the GRAPPLE package for inference
 
 We will need to load three types of GWAS summary statistics datasets:
 
@@ -55,7 +62,7 @@ We will need to load three types of GWAS summary statistics datasets:
 
 3.  **Outcome**:
 
-    -   Used to estimate the sizesand standard deviations of the associations between each of the SNPs we have selected and each of the relevant outcomes/diseases
+    -   Used to estimate the sizes and standard deviations of the associations between each of the SNPs we have selected and each of the relevant outcomes/diseases
 
     -   There should be one outcome dataset loaded for each of the exposures we are interested in.
 
@@ -65,7 +72,9 @@ We also need to load a reference file: for the purposes of this tutorial we are 
 
 # Preprocessing GWAS summary data for GRAPPLE
 
-The first step is to get SNPs that appear in all GWAS datasets:
+The first step is to get SNPs that appear in all GWAS datasets. This is done using get_SNP_intersection, which outputs a data table with a column for "SNP" and a p-value column for each of the files loaded. The files may be renamed using `file_labels`, which is a vector of labels for each datafile. This defaults to the vector of filenames given in `files`.
+
+These p-value columns have names of the form "pval_LABEL", for example in the code below SNP_inter has columns "SNP", "pval_bmi", "pval_cad", and "pval_t2d".
 
 ```{r}
 sel_files <- "../data/BMI-giant17eu-subset.csv"
@@ -73,32 +82,39 @@ exp_files <- "../data/CAD-c4d11-subset.csv"
 out_files <- "../data/T2D-diagram12-Im-subset.csv"
 files <- c(sel_files, exp_files, out_files)
 
-(SNP_inter <- get_SNP_intersection(files))
+(SNP_inter <- get_SNP_intersection(files, file_labels = c("bmi", "cad", "t2d")))
 ```
 
-To obtain independent SNPs for statistical inference, we use the filter_SNPs. This has four different utility modes:
+To obtain independent SNPs for statistical inference, we use the `filter_SNPs` function. This has four different settings for the `utility` parameter:
 
 -   "inference": for selecting significant and independent SNPs for MR inference
 
--   "marker_sel" and "marker_exp": to select marker SNPs for interpretation of different modes (lower thresholds are used for ease of interpretation), with p-values sourced from the selection, exposure datasets respectively.
+-   "marker_sel" and "marker_exp": to select marker SNPs for interpretation of different modes (lower thresholds are used to more SNPs to aid interpretation). The p-values used for filtering are sourced from the selection and exposure datasets respectively.
 
 -   "correlation": for selecting non-significant SNPs (that were not used for inference) in order to estimate the correlation matrix
 
-For each of the modes, we input a list of selection, exposure, and outcome files and filter_SNPs returns a dataframe of selected SNPs with the pvalues from each file.
-
-```{r, echo=FALSE}
-options(datatable.print.topn = 2)
-options(datatable.print.nrows = 2)
-```
+For each of the modes, we input a list of selection, exposure, and outcome files and `filter_SNPs` returns a data table of selected SNPs with the p-values from each file.
 
 ```{r}
 #plink_exe <-"../util/plink_mac/plink"
 plink_exe <- "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/plink"
 snps_inference <-
-    filter_SNPs(sel_files, exp_files, out_files,
+    filter_SNPs("bmi", "cad", "t2d",
                 SNP_inter,
                 utility = "inference",
                 plink_exe = plink_exe,
                 plink_refdat = "C:/Users/naomi/OneDrive/Desktop/plink_win64_20210606/util/data_maf0.01_rs")
 (dat_list <- extract_data(files, snps_inference))
+```
+
+Next we harmonise the data list:
+
+```{r}
+dat_list <- harmonise_data_list(dat_list)
+```
+
+Finally, we format the data to be used for inference as expected by the GRAPPLE package:
+
+```{r}
+inference_data <- format_data(dat_list, exp_files = exp_files, out_files = out_files)
 ```

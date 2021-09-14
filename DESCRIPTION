@@ -16,7 +16,8 @@ Imports:
     haploR,
     ggrepel,
     dplyr,
-    tools
+    tools,
+	TwoSampleMR
 RoxygenNote: 7.1.1
 Suggests: 
     knitr,
